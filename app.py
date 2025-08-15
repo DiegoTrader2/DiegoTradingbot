@@ -3,8 +3,8 @@ from flask import Flask, request, jsonify
 
 app = Flask(__name__)
 
-TOKEN = os.environ.get("7981038340:AAFvfzCKbMGP_3eW_xACuUaT2uTiszBxQ1Y")        # lo pondremos en Render
-CHAT_ID = os.environ.get("7160439359")    # lo pondremos en Render
+TOKEN = os.environ.get("TELEGRAM_TOKEN")        # lo pondremos en Render
+CHAT_ID = os.environ.get("TELEGRAM_CHAT_ID")    # lo pondremos en Render
 
 def send_telegram(text: str):
     if not TOKEN or not CHAT_ID:
