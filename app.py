@@ -1,16 +1,22 @@
+
 import os, json, requests
 from flask import Flask, request, jsonify
 
 app = Flask(__name__)
 
-TOKEN = os.environ.get("TELEGRAM_TOKEN")        # lo pondremos en Render
-CHAT_ID = os.environ.get("TELEGRAM_CHAT_ID")    # lo pondremos en Render
+TOKEN = os.environ.get("TELEGRAM_TOKEN")  # lo ponemos en Render
+CHAT_ID = os.environ.get("TELEGRAM_CHAT_ID")  # lo ponemos en Render
 
 def send_telegram(text: str):
     if not TOKEN or not CHAT_ID:
         return False, "Faltan TELEGRAM_TOKEN o TELEGRAM_CHAT_ID"
     url = f"https://api.telegram.org/bot{TOKEN}/sendMessage"
-    payload = {"chat_id": CHAT_ID, "text": text, "parse_mode": "HTML", "disable_web_page_preview": True}
+    payload = {
+        "chat_id": CHAT_ID,
+        "text": text,
+        "parse_mode": "Markdown",  # más seguro que HTML
+        "disable_web_page_preview": True
+    }
     r = requests.post(url, json=payload, timeout=10)
     ok = r.ok and r.json().get("ok")
     return ok, r.text
@@ -23,13 +29,18 @@ def home():
 @app.route("/alert", methods=["POST"])
 def alert():
     data = request.get_json(silent=True) or {}
-    # si TradingView manda "message", lo usamos; si no, mandamos todo el JSON
+
+    # Si viene "message", lo usamos. Si no, mandamos el JSON completo
     message = data.get("message")
     if not message:
-        message = f"📈 Alerta TradingView:\n<pre>{json.dumps(data, ensure_ascii=False, indent=2)}</pre>"
+        try:
+            message = f"📢 Alerta TradingView:\n```{json.dumps(data, ensure_ascii=False, indent=2)}```"
+        except Exception as e:
+            message = f"📢 Alerta TradingView (sin datos legibles). Error: {e}"
+
     ok, detail = send_telegram(message)
     return jsonify({"ok": ok, "detail": detail}), (200 if ok else 500)
 
 if __name__ == "__main__":
-    port = int(os.environ.get("PORT", 5000))     # Render te da PORT
+    port = int(os.environ.get("PORT", 5000))  # Render te da PORT
     app.run(host="0.0.0.0", port=port)
