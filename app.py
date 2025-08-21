@@ -30,16 +30,26 @@ def home():
 def alert():
     data = request.get_json(silent=True) or {}
 
-    # Si viene "message", lo usamos. Si no, mandamos el JSON completo
-    message = data.get("message")
-    if not message:
-        try:
-            message = f"📢 Alerta TradingView:\n```{json.dumps(data, ensure_ascii=False, indent=2)}```"
-        except Exception as e:
-            message = f"📢 Alerta TradingView (sin datos legibles). Error: {e}"
+    mensaje = data.get("message", "")
+    precio = data.get("price", "")
+    symbol = data.get("symbol", "")
 
-    ok, detail = send_telegram(message)
-    return jsonify({"ok": ok, "detail": detail}), (200 if ok else 500)
+    # Hora UTC y la ajustamos a Argentina (UTC-3)
+    from datetime import datetime, timedelta
+    hora_utc = datetime.utcnow()
+    hora_arg = hora_utc - timedelta(hours=3)
+    hora = hora_arg.strftime("%A %d-%m-%Y %H:%M:%S")  # incluye día de la semana
+
+    texto = (
+        f"🚨 *Alerta de TradingView*\n\n"
+        f"📊 Par: {symbol}\n"
+        f"💬 Mensaje: {mensaje}\n"
+        f"💰 Precio: {precio}\n"
+        f"⏰ Hora (ARG): {hora}"
+    )
+
+    ok = send_telegram(texto)
+    return jsonify({"ok": ok}), 200 if ok else 500
 
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 5000))  # Render te da PORT
