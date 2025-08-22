@@ -22,13 +22,13 @@ def alert():
     interval = data.get("interval", "N/A")
     time = data.get("time", "N/A")
 
-    # Convertimos signal en texto claro
+    # Convertimos señal a texto claro
     if signal.lower() == "buy":
         action = "📈 Posible COMPRA"
     elif signal.lower() == "sell":
         action = "📉 Posible VENTA"
     else:
-        action = "⚡ Señal"
+        action = "⚠️ Señal detectada"
 
     message = f"""{action}
 Par: {symbol}
@@ -38,3 +38,6 @@ Hora: {time}"""
 
     send_telegram_message(message)
     return "ok", 200
+
+if __name__ == "__main__":
+    app.run(host="0.0.0.0", port=5000)
