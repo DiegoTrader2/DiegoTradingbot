@@ -1,27 +1,52 @@
 from flask import Flask, request
 import requests
 import os
+from datetime import datetime
 
 app = Flask(__name__)
 
-BOT_TOKEN = os.getenv("BOT_TOKEN")
-CHAT_ID = os.getenv("CHAT_ID")
+# ⚡ Variables de entorno (ponelas en Render)
+TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
+TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
 
-@app.route('/alert', methods=['POST'])
-def alert():
-    data = request.json
-    print("📩 Alerta recibida:", data)  # Debug para ver qué llega
+def send_telegram_message(message: str):
+    """Envía un mensaje a Telegram usando la API."""
+    url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage"
+    payload = {"chat_id": TELEGRAM_CHAT_ID, "text": message}
+    try:
+        r = requests.post(url, data=payload)
+        r.raise_for_status()
+    except Exception as e:
+        print("❌ Error enviando mensaje:", e)
 
-    if not data:
-        return "No JSON recibido", 400
+@app.route("/webhook", methods=["POST"])
+def webhook():
+    try:
+        data = request.json
+        print("📩 Alerta recibida:", data)
 
-    message = data.get("message", "⚠️ Alerta sin mensaje")
-    print("➡️ Enviando a Telegram:", message)  # Debug
+        # Datos que manda TradingView en el mensaje {{...}}
+        par = data.get("par", "N/A")
+        senal = data.get("senal", "N/A")
+        precio = data.get("precio", "N/A")
+        temporalidad = data.get("temporalidad", "N/A")
+        hora = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
-    url = f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage"
-    payload = {"chat_id": CHAT_ID, "text": message}
+        # Mensaje final con formato
+        mensaje = (
+            f"{par}\n"
+            f"Señal: {senal}\n"
+            f"Precio: {precio}\n"
+            f"Temporalidad: {temporalidad}\n"
+            f"Hora: {hora}"
+        )
 
-    r = requests.post(url, json=payload)
-    print("✅ Respuesta Telegram:", r.status_code, r.text)  # Debug
+        send_telegram_message(mensaje)
+        return {"status": "ok"}, 200
 
-    return "ok", 200
+    except Exception as e:
+        print("❌ Error en webhook:", e)
+        return {"status": "error", "message": str(e)}, 500
+
+if __name__ == "__main__":
+    app.run(host="0.0.0.0", port=5000)
