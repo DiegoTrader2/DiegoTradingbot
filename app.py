@@ -4,42 +4,24 @@ import os
 
 app = Flask(__name__)
 
-TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_TOKEN")
-CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
+BOT_TOKEN = os.getenv("BOT_TOKEN")
+CHAT_ID = os.getenv("CHAT_ID")
 
-def send_telegram_message(message):
-    url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage"
-    data = {"chat_id": CHAT_ID, "text": message}
-    requests.post(url, data=data)
-
-@app.route("/alert", methods=["POST"])
+@app.route('/alert', methods=['POST'])
 def alert():
     data = request.json
+    print("📩 Alerta recibida:", data)  # Debug para ver qué llega
 
-    signal = data.get("signal", "alerta")
-    symbol = data.get("symbol", "N/A")
-    price = data.get("price", "N/A")
-    interval = data.get("interval", "N/A")
-    time = data.get("time", "N/A")
+    if not data:
+        return "No JSON recibido", 400
 
-    # Convertimos señal en texto claro
-    if signal.lower() == "buy":
-        action = "📈 Posible COMPRA"
-    elif signal.lower() == "sell":
-        action = "📉 Posible VENTA"
-    else:
-        action = "⚠ Señal detectada"
+    message = data.get("message", "⚠️ Alerta sin mensaje")
+    print("➡️ Enviando a Telegram:", message)  # Debug
 
-    message = f"""
-{action}
-Par: {symbol}
-Precio: {price}
-Temporalidad: {interval}
-Hora: {time}
-"""
+    url = f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage"
+    payload = {"chat_id": CHAT_ID, "text": message}
 
-    send_telegram_message(message)
+    r = requests.post(url, json=payload)
+    print("✅ Respuesta Telegram:", r.status_code, r.text)  # Debug
+
     return "ok", 200
-
-if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=5000)
