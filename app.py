@@ -1,27 +1,25 @@
 from flask import Flask, request
 import requests
-import os
 
 app = Flask(__name__)
 
-BOT_TOKEN = os.getenv("TELEGRAM_TOKEN")
-CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
+TOKEN = "TELEGRAM_TOKEN"
+CHAT_ID = "TELEGRAM_CHAT_ID"
 
 @app.route('/alert', methods=['POST'])
 def alert():
-    data = request.json
-    print("📩 Alerta recibida:", data)  # Debug para ver qué llega
+    data = request.get_json()
+    mensaje = f"""
+📢 Alerta de TradingView
+Par: {data.get('ticker', 'N/A')}
+💬 Mensaje: {data.get('mensaje', 'N/A')}
+💲 Precio: {data.get('precio', 'N/A')}
+🕒 Hora: {data.get('hora', 'N/A')}
+"""
+    url = f"https://api.telegram.org/bot{TOKEN}/sendMessage"
+    requests.post(url, data={"chat_id": CHAT_ID, "text": mensaje})
+    return "OK", 200
 
-    if not data:
-        return "No JSON recibido", 400
-
-    message = data.get("message", "⚠️ Alerta sin mensaje")
-    print("➡️ Enviando a Telegram:", message)  # Debug
-
-    url = f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage"
-    payload = {"chat_id": CHAT_ID, "text": message}
-
-    r = requests.post(url, json=payload)
-    print("✅ Respuesta Telegram:", r.status_code, r.text)  # Debug
-
-    return "ok", 200
+if __name__ == "__main__":
+    # Esto mantiene el servidor vivo en Render
+    app.run(host="0.0.0.0", port=5000)
