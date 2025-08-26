@@ -61,8 +61,6 @@ def alert():
         except Exception as e:
             message = f"📢 Alerta TradingView (sin datos legibles). Error: {e}"
 
-    
-
     ok, detail = send_telegram(message)
     return jsonify({"ok": ok, "detail": detail}), (200 if ok else 500)
 
