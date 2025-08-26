@@ -29,7 +29,6 @@ def home():
 def alert():
     data = request.get_json(silent=True) or {}
 
-    # Si viene "message", lo usamos. Si no, mandamos el JSON completo
     # Extraemos los datos enviados desde TradingView
     par = data.get("par", "Desconocido")
     precio = data.get("precio", "N/A")
