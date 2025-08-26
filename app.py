@@ -30,12 +30,38 @@ def alert():
     data = request.get_json(silent=True) or {}
 
     # Si viene "message", lo usamos. Si no, mandamos el JSON completo
+    # Extraemos los datos enviados desde TradingView
+    par = data.get("par", "Desconocido")
+    precio = data.get("precio", "N/A")
+    temporalidad = data.get("temporalidad", "N/A")
+    hora = data.get("hora", "N/A")
+    rsi = float(data.get("rsi", 0))
+
+    # Armamos el mensaje según el valor del RSI
+    if rsi < 30:
+        mensaje_alerta = "🟢 COMPRA"
+    elif rsi > 70:
+        mensaje_alerta = "🔴 VENTA"
+    else:
+        mensaje_alerta = f"ℹ️ RSI en rango ({rsi})"
+
+    # Construcción final del mensaje
+    message = (
+        f"🚨 Alerta de TradingView\n"
+        f"{mensaje_alerta}\n"
+        f"Par: {par}\n"
+        f"Precio: {precio}\n"
+        f"Temporalidad: {temporalidad}\n"
+        f"Hora: {hora}"
+    )
     message = data.get("message")
     if not message:
         try:
             message = f"📢 Alerta TradingView:\n```{json.dumps(data, ensure_ascii=False, indent=2)}```"
         except Exception as e:
             message = f"📢 Alerta TradingView (sin datos legibles). Error: {e}"
+
+    
 
     ok, detail = send_telegram(message)
     return jsonify({"ok": ok, "detail": detail}), (200 if ok else 500)
