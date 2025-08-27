@@ -24,9 +24,9 @@ def alert():
 
     # Convertimos señal
     if signal == "buy":
-        action = 📈"COMPRA"
+        action = "📈COMPRA"
     elif signal == "sell":
-        action = 📉"VENTA"
+        action = "📉VENTA"
     else:
         action = "⚠️ Señal desconocida"
 
