@@ -22,7 +22,7 @@ def send_telegram_message(message: str) -> bool:
         "disable_web_page_preview": True
     }
     try:
-        r = requests.post(url, json=data, timeout=50)
+        r = requests.post(url, json=data, timeout=10)
         ok = r.ok and r.json().get("ok")
         if not ok:
             print("❌ Error al enviar a Telegram:", r.text)
