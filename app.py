@@ -1,105 +1,128 @@
 import os
-import requests
 from flask import Flask, request, jsonify
 from pybit.unified_trading import HTTP
+import requests
 
 # Cargar variables de entorno
-from dotenv import load_dotenv
-load_dotenv()
-
-# Credenciales
-TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN")
-TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
 BYBIT_API_KEY = os.getenv("BYBIT_API_KEY")
 BYBIT_API_SECRET = os.getenv("BYBIT_API_SECRET")
+TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN")
+TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
 
-# Inicializar Bybit
+# Cliente Bybit (modo demo)
 session = HTTP(
-    testnet=True,  # True si usás cuenta demo
+    testnet=True,
     api_key=BYBIT_API_KEY,
     api_secret=BYBIT_API_SECRET
 )
 
-# Flask
 app = Flask(__name__)
 
-# Función para enviar mensaje a Telegram
+# Variables globales
+current_position = None  # Guardar la posición abierta
+position_entry_price = None  # Precio de entrada de la posición
+
+# Función para enviar mensajes a Telegram
 def send_telegram_message(message):
     url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage"
     payload = {"chat_id": TELEGRAM_CHAT_ID, "text": message}
     requests.post(url, json=payload)
 
-# Función para abrir orden
-def place_order(symbol, side, qty=100):
+# Función para abrir operación
+def open_position(signal, symbol, amount):
+    global current_position, position_entry_price
+
     try:
+        side = "Buy" if signal == "BUY" else "Sell"
+        qty = float(amount.replace("USDT", "").strip()) / 1000  # Ejemplo: BTC ≈ 1000 USDT
+
         order = session.place_order(
             category="linear",
             symbol=symbol,
             side=side,
             orderType="Market",
             qty=qty,
-            timeInForce="GTC"
+            timeInForce="GoodTillCancel",
+            takeProfit=3.0,    # TP 3%
+            stopLoss=1.5       # SL 1.5%
         )
-        send_telegram_message(f"✅ Orden enviada: {side} {qty} {symbol}")
+
+        current_position = side
+        position_entry_price = float(order["result"]["orderPrice"]) if order["result"]["orderPrice"] else None
+
+        send_telegram_message(f"✅ Operación {side} abierta en {symbol} con {amount}")
         return order
+
     except Exception as e:
-        send_telegram_message(f"❌ Error al enviar orden: {e}")
+        send_telegram_message(f"⚠️ Error al abrir posición: {e}")
         return None
 
-# Función para cerrar orden y reportar ganancia/pérdida
-def close_position(symbol, side):
+# Función para cerrar operación
+def close_position(symbol):
+    global current_position, position_entry_price
+
     try:
-        opposite = "Sell" if side == "Buy" else "Buy"
+        if current_position:
+            side = "Sell" if current_position == "Buy" else "Buy"
 
-        # Cierra posición
-        session.place_order(
-            category="linear",
-            symbol=symbol,
-            side=opposite,
-            orderType="Market",
-            qty=100,
-            timeInForce="GTC"
-        )
-
-        # Consultar PNL
-        result = session.get_closed_pnl(category="linear", symbol=symbol, limit=1)
-        if "result" in result and result["result"]["list"]:
-            last_trade = result["result"]["list"][0]
-            realised_pnl = last_trade["realisedPnl"]
-            send_telegram_message(
-                f"📊 Operación cerrada en {symbol}\nGanancia/Pérdida: {realised_pnl} USDT"
+            # Cerrar con orden de mercado
+            order = session.place_order(
+                category="linear",
+                symbol=symbol,
+                side=side,
+                orderType="Market",
+                qty=0.1,  # Se puede mejorar para que detecte el tamaño real
+                timeInForce="GoodTillCancel"
             )
+
+            # Calcular ganancia/perdida
+            if position_entry_price:
+                exit_price = float(order["result"]["orderPrice"]) if order["result"]["orderPrice"] else position_entry_price
+                pnl = ((exit_price - position_entry_price) / position_entry_price) * 100
+                pnl_msg = f"📊 Resultado: {pnl:.2f}%"
+            else:
+                pnl_msg = "📊 Resultado no disponible (precio de entrada desconocido)."
+
+            send_telegram_message(f"❌ Posición cerrada en {symbol}\n{pnl_msg}")
+
+            current_position = None
+            position_entry_price = None
+
+            return order
         else:
-            send_telegram_message("⚠️ Operación cerrada pero no encontré PNL.")
-
+            send_telegram_message("ℹ️ No hay posición abierta para cerrar.")
+            return None
     except Exception as e:
-        send_telegram_message(f"❌ Error al cerrar operación: {e}")
+        send_telegram_message(f"⚠️ Error al cerrar posición: {e}")
+        return None
 
-# Webhook para recibir alertas de TradingView
+# Endpoint para recibir alertas de TradingView
 @app.route("/webhook", methods=["POST"])
 def webhook():
+    global current_position
+
     data = request.json
-    if not data:
-        return jsonify({"error": "No se recibieron datos"}), 400
+    signal = data.get("signal")
+    symbol = data.get("pair")
+    amount = data.get("amount")
 
-    try:
-        symbol = data.get("symbol", "BTCUSDT")
-        action = data.get("action")
+    if not signal or not symbol:
+        return jsonify({"status": "error", "message": "Faltan datos"}), 400
 
-        if action == "BUY":
-            place_order(symbol, "Buy")
-        elif action == "SELL":
-            close_position(symbol, "Buy")  # Cierra si estaba en Buy
-            place_order(symbol, "Sell")
-        else:
-            send_telegram_message(f"⚠️ Acción desconocida: {action}")
+    if not current_position:
+        # No hay posición → abrir nueva
+        open_position(signal, symbol, amount)
+    elif (signal == "BUY" and current_position == "Buy") or (signal == "SELL" and current_position == "Sell"):
+        # Mismo sentido → ignorar
+        send_telegram_message(f"ℹ️ Señal repetida {signal}, operación ignorada.")
+    else:
+        # Señal contraria → cerrar y abrir
+        close_position(symbol)
+        open_position(signal, symbol, amount)
 
-        return jsonify({"status": "ok"}), 200
-
-    except Exception as e:
-        send_telegram_message(f"❌ Error en webhook: {e}")
-        return jsonify({"error": str(e)}), 500
+    return jsonify({"status": "ok"}), 200
 
 
 if __name__ == "__main__":
-    app.run(port=5000)
+    port = int(os.environ.get("PORT", 5000))
+    app.run(host="0.0.0.0", port=port)
