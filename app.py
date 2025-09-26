@@ -1,73 +1,105 @@
 import os
 import requests
 from flask import Flask, request, jsonify
+from pybit.unified_trading import HTTP
 
+# Cargar variables de entorno
+from dotenv import load_dotenv
+load_dotenv()
+
+# Credenciales
+TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN")
+TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
+BYBIT_API_KEY = os.getenv("BYBIT_API_KEY")
+BYBIT_API_SECRET = os.getenv("BYBIT_API_SECRET")
+
+# Inicializar Bybit
+session = HTTP(
+    testnet=True,  # True si usás cuenta demo
+    api_key=BYBIT_API_KEY,
+    api_secret=BYBIT_API_SECRET
+)
+
+# Flask
 app = Flask(__name__)
 
-# 🔑 Token y Chat ID (los cargás como variables de entorno en Render)
-TELEGRAM_BOT_TOKEN = os.environ.get("TELEGRAM_TOKEN")
-CHAT_ID = os.environ.get("TELEGRAM_CHAT_ID")
+# Función para enviar mensaje a Telegram
+def send_telegram_message(message):
+    url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage"
+    payload = {"chat_id": TELEGRAM_CHAT_ID, "text": message}
+    requests.post(url, json=payload)
 
-def send_telegram_message(message: str) -> bool:
-    """Envía mensaje a Telegram y devuelve True/False si fue exitoso"""
-    if not TELEGRAM_BOT_TOKEN or not CHAT_ID:
-        print("⚠️ Faltan TELEGRAM_TOKEN o TELEGRAM_CHAT_ID en variables de entorno")
-        return False
-    
-    url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage"
-    data = {
-        "chat_id": CHAT_ID,
-        "text": message,
-        "parse_mode": "Markdown",
-        "disable_web_page_preview": True
-    }
+# Función para abrir orden
+def place_order(symbol, side, qty=100):
     try:
-        r = requests.post(url, json=data, timeout=10)
-        ok = r.ok and r.json().get("ok")
-        if not ok:
-            print("❌ Error al enviar a Telegram:", r.text)
-        return ok
+        order = session.place_order(
+            category="linear",
+            symbol=symbol,
+            side=side,
+            orderType="Market",
+            qty=qty,
+            timeInForce="GTC"
+        )
+        send_telegram_message(f"✅ Orden enviada: {side} {qty} {symbol}")
+        return order
     except Exception as e:
-        print("⚠️ Excepción al enviar a Telegram:", e)
-        return False
+        send_telegram_message(f"❌ Error al enviar orden: {e}")
+        return None
 
-@app.route("/")
-def home():
-    return "OK", 200
+# Función para cerrar orden y reportar ganancia/pérdida
+def close_position(symbol, side):
+    try:
+        opposite = "Sell" if side == "Buy" else "Buy"
 
-@app.route("/alert", methods=["POST"])
-def alert():
-    data = request.get_json(force=True, silent=True) or {}
+        # Cierra posición
+        session.place_order(
+            category="linear",
+            symbol=symbol,
+            side=opposite,
+            orderType="Market",
+            qty=100,
+            timeInForce="GTC"
+        )
 
-    # 📩 Datos que TradingView debe mandar en el JSON de la alerta
-    signal = str(data.get("signal", "")).lower()
-    symbol = data.get("symbol", "N/A")
-    price = data.get("price", "N/A")
-    interval = data.get("interval", "N/A")
-    time = data.get("time", "N/A")
+        # Consultar PNL
+        result = session.get_closed_pnl(category="linear", symbol=symbol, limit=1)
+        if "result" in result and result["result"]["list"]:
+            last_trade = result["result"]["list"][0]
+            realised_pnl = last_trade["realisedPnl"]
+            send_telegram_message(
+                f"📊 Operación cerrada en {symbol}\nGanancia/Pérdida: {realised_pnl} USDT"
+            )
+        else:
+            send_telegram_message("⚠️ Operación cerrada pero no encontré PNL.")
 
-    # 🎯 Convertimos la señal en texto
-    if signal == "buy":
-        action = "🟢 COMPRA"
-    elif signal == "sell":
-        action = "🔴 VENTA"
-    else:
-        action = "⚠️ Señal desconocida"
+    except Exception as e:
+        send_telegram_message(f"❌ Error al cerrar operación: {e}")
 
-    # 📝 Mensaje final
-    message = f"""
-📊 *Alerta de TradingView*  
+# Webhook para recibir alertas de TradingView
+@app.route("/webhook", methods=["POST"])
+def webhook():
+    data = request.json
+    if not data:
+        return jsonify({"error": "No se recibieron datos"}), 400
 
-📌 Par: {symbol}  
-📈 Señal: {action}  
-💲 Precio: {price}  
-⏱️ Temporalidad: {interval}  
-🕒 Hora: {time}  
-"""
+    try:
+        symbol = data.get("symbol", "BTCUSDT")
+        action = data.get("action")
 
-    ok = send_telegram_message(message)
-    return jsonify({"ok": ok}), 200 if ok else 500
+        if action == "BUY":
+            place_order(symbol, "Buy")
+        elif action == "SELL":
+            close_position(symbol, "Buy")  # Cierra si estaba en Buy
+            place_order(symbol, "Sell")
+        else:
+            send_telegram_message(f"⚠️ Acción desconocida: {action}")
+
+        return jsonify({"status": "ok"}), 200
+
+    except Exception as e:
+        send_telegram_message(f"❌ Error en webhook: {e}")
+        return jsonify({"error": str(e)}), 500
+
 
 if __name__ == "__main__":
-    port = int(os.environ.get("PORT", 5000))
-    app.run(host="0.0.0.0", port=port)
+    app.run(port=5000)
