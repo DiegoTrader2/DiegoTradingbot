@@ -97,7 +97,7 @@ def close_position(symbol):
         return None
 
 # Endpoint para recibir alertas de TradingView
-@app.route('/'webhook', methods=['POST'])
+@app.route("/"webhook"/methods=["POST"])
 def webhook():
     global current_position
 
