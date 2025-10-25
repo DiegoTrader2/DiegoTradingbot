@@ -9,18 +9,20 @@ BYBIT_API_SECRET = os.getenv("BYBIT_API_SECRET")
 TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN")
 TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
 
+# ✅ Bloque de verificación
+print("DEBUG: Variables de entorno cargadas:")
+print("BYBIT_API_KEY:", "✅ OK" if BYBIT_API_KEY else "❌ FALTA")
+print("BYBIT_API_SECRET:", "✅ OK" if BYBIT_API_SECRET else "❌ FALTA")
+print("TELEGRAM_TOKEN:", "✅ OK" if TELEGRAM_TOKEN else "❌ FALTA")
+print("TELEGRAM_CHAT_ID:", "✅ OK" if TELEGRAM_CHAT_ID else "❌ FALTA")
+
+# Inicializar Flask
+app = Flask(__name__)
+
+# (acá recién podés usar @app.route...)
 @app.route("/", methods=["GET"])
 def home():
-    return "✅ DiegoTradingBot está activo en Render.", 200
-
-# Cliente Bybit (modo demo)
-session = HTTP(
-    testnet=True,
-    api_key=BYBIT_API_KEY,
-    api_secret=BYBIT_API_SECRET
-)
-
-app = Flask(__name__)
+    return jsonify({"status": "ok", "message": "Bot activo"}), 200
 
 # Variables globales
 current_position = None  # Guardar la posición abierta
