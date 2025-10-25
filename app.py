@@ -16,6 +16,13 @@ print("BYBIT_API_SECRET:", "✅ OK" if BYBIT_API_SECRET else "❌ FALTA")
 print("TELEGRAM_TOKEN:", "✅ OK" if TELEGRAM_TOKEN else "❌ FALTA")
 print("TELEGRAM_CHAT_ID:", "✅ OK" if TELEGRAM_CHAT_ID else "❌ FALTA")
 
+# Cliente Bybit (modo demo)
+session = HTTP(
+    testnet=True,
+    api_key=BYBIT_API_KEY,
+    api_secret=BYBIT_API_SECRET
+)
+
 # Inicializar Flask
 app = Flask(__name__)
 
