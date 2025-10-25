@@ -9,6 +9,10 @@ BYBIT_API_SECRET = os.getenv("BYBIT_API_SECRET")
 TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN")
 TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
 
+@app.route("/", methods=["GET"])
+def home():
+    return "✅ DiegoTradingBot está activo en Render.", 200
+
 # Cliente Bybit (modo demo)
 session = HTTP(
     testnet=True,
