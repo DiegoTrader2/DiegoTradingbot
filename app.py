@@ -47,7 +47,7 @@ def open_position(signal, symbol, amount):
 
     try:
         side = "Buy" if signal == "BUY" else "Sell"
-        qty = float(amount.replace("USDT", "").strip()) / 1000  # Ejemplo: BTC = 1000 USDT aprox.
+        qty = 0.001 # aproximadamente 68 USDT segun el precio actual de BTC 
 
         # Crear orden de mercado (sin TP/SL inicial)
         order = session.place_order(
