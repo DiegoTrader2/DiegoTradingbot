@@ -47,9 +47,9 @@ def open_position(signal, symbol, amount):
 
     try:
         side = "Buy" if signal == "BUY" else "Sell"
-        qty = float(amount.replace("USDT", "").strip()) / 1000  # Ejemplo: BTC = 1000 USDT
+        qty = float(amount.replace("USDT", "").strip()) / 1000  # Ejemplo: BTC = 1000 USDT aprox.
 
-        # Crear orden de mercado
+        # Crear orden de mercado (sin TP/SL inicial)
         order = session.place_order(
             category="linear",
             symbol=symbol,
@@ -59,51 +59,57 @@ def open_position(signal, symbol, amount):
             timeInForce="GoodTillCancel"
         )
 
+        # Verificar si se ejecutó correctamente
+        if "result" not in order or "orderPrice" not in order["result"]:
+            send_telegram_message(f"⚠️ No se pudo obtener el precio de entrada para {symbol}. Respuesta: {order}")
+            return None
+
         # Guardar posición actual
         current_position = side
-        position_entry_price = float(order["result"]["orderPrice"]) if order["result"]["orderPrice"] else None
+        position_entry_price = float(order["result"]["orderPrice"])
 
-        if position_entry_price:
-            # ✅ Calcular precios automáticos en base a porcentaje
-            take_profit_pct = 3.0   # Porcentaje de ganancia (3%)
-            stop_loss_pct = 1.5     # Porcentaje de pérdida (1.5%)
+        # ✅ Calcular precios automáticos en base a porcentaje
+        take_profit_pct = 3.0   # Porcentaje de ganancia
+        stop_loss_pct = 1.5     # Porcentaje de pérdida
 
-            if side == "Buy":
-                take_profit_price = position_entry_price * (1 + take_profit_pct / 100)
-                stop_loss_price = position_entry_price * (1 - stop_loss_pct / 100)
-            else:  # Venta
-                take_profit_price = position_entry_price * (1 - take_profit_pct / 100)
-                stop_loss_price = position_entry_price * (1 + stop_loss_pct / 100)
+        if side == "Buy":
+            take_profit_price = position_entry_price * (1 + take_profit_pct / 100)
+            stop_loss_price = position_entry_price * (1 - stop_loss_pct / 100)
+        else:  # Venta
+            take_profit_price = position_entry_price * (1 - take_profit_pct / 100)
+            stop_loss_price = position_entry_price * (1 + stop_loss_pct / 100)
 
-            # Enviar órdenes TP/SL
-            session.place_order(
-                category="linear",
-                symbol=symbol,
-                side="Sell" if side == "Buy" else "Buy",
-                orderType="TakeProfit",
-                qty=qty,
-                triggerPrice=round(take_profit_price, 2),
-                timeInForce="GoodTillCancel"
-            )
+        # ✅ Crear órdenes separadas de Take Profit y Stop Loss
+        tp_order = session.place_order(
+            category="linear",
+            symbol=symbol,
+            side="Sell" if side == "Buy" else "Buy",
+            orderType="Limit",
+            qty=qty,
+            price=round(take_profit_price, 2),
+            timeInForce="GoodTillCancel",
+            reduceOnly=True
+        )
 
-            session.place_order(
-                category="linear",
-                symbol=symbol,
-                side="Sell" if side == "Buy" else "Buy",
-                orderType="StopLoss",
-                qty=qty,
-                triggerPrice=round(stop_loss_price, 2),
-                timeInForce="GoodTillCancel"
-            )
+        sl_order = session.place_order(
+            category="linear",
+            symbol=symbol,
+            side="Sell" if side == "Buy" else "Buy",
+            orderType="StopMarket",
+            qty=qty,
+            triggerDirection=1 if side == "Buy" else 2,
+            stopPx=round(stop_loss_price, 2),
+            timeInForce="GoodTillCancel",
+            reduceOnly=True
+        )
 
-            send_telegram_message(
-                f"✅ Operación {side} abierta en {symbol}\n"
-                f"💰 Precio entrada: {position_entry_price}\n"
-                f"🎯 TP: {round(take_profit_price, 2)} (+{take_profit_pct}%)\n"
-                f"🛑 SL: {round(stop_loss_price, 2)} (-{stop_loss_pct}%)"
-            )
-        else:
-            send_telegram_message(f"⚠️ No se pudo obtener el precio de entrada para {symbol}")
+        # Enviar confirmación por Telegram
+        send_telegram_message(
+            f"✅ Operación {side} abierta en {symbol}\n"
+            f"💰 Precio entrada: {position_entry_price}\n"
+            f"🎯 TP: {round(take_profit_price, 2)} (+{take_profit_pct}%)\n"
+            f"🛑 SL: {round(stop_loss_price, 2)} (-{stop_loss_pct}%)"
+        )
 
         return order
 
@@ -112,14 +118,20 @@ def open_position(signal, symbol, amount):
         return None
                   
 # Función para cerrar operación
+# Función para cerrar operación
 def close_position(symbol):
     global current_position, position_entry_price
 
     try:
         if current_position:
+            # Determinar dirección contraria
             side = "Sell" if current_position == "Buy" else "Buy"
 
-            # Cerrar con orden de mercado
+            # Obtener último precio de mercado
+            ticker = session.get_tickers(category="linear", symbol=symbol)
+            market_price = float(ticker["result"]["list"][0]["lastPrice"])
+
+            # Cerrar posición con orden de mercado
             order = session.place_order(
                 category="linear",
                 symbol=symbol,
@@ -131,41 +143,42 @@ def close_position(symbol):
 
             # Calcular ganancia o pérdida
             if position_entry_price:
-                exit_price = float(order["result"]["orderPrice"]) if order["result"].get("orderPrice") else None
-                if exit_price:
-                    pnl_percent = ((exit_price - position_entry_price) / position_entry_price) * 100
-                    if current_position == "Sell":
-                        pnl_percent *= -1  # Ajuste si era posición corta
+                exit_price = market_price
+                pnl_percent = ((exit_price - position_entry_price) / position_entry_price) * 100
 
-                    # Determinar motivo de cierre
-                    if pnl_percent >= 2.9:  # Aproximadamente TP alcanzado (3%)
-                        reason = "✅ Take Profit alcanzado"
-                    elif pnl_percent <= -1.4:  # Aproximadamente SL alcanzado (1.5%)
-                        reason = "🛑 Stop Loss ejecutado"
-                    else:
-                        reason = "📉 Cierre manual o por alerta"
+                # Si era una posición corta (venta), invertir el signo
+                if current_position == "Sell":
+                    pnl_percent *= -1
 
-                    pnl_msg = f"{reason}\n💰 Resultado: {pnl_percent:.2f}%"
+                # Detectar motivo de cierre
+                if pnl_percent >= 3.0:
+                    reason = "✅ TP alcanzado"
+                elif pnl_percent <= -1.5:
+                    reason = "🛑 SL ejecutado"
                 else:
-                    pnl_msg = "ℹ️ No se pudo obtener el precio de cierre."
+                    reason = "🔹 Cierre manual o por alerta"
+
+                pnl_msg = f"{reason}\n💰 Resultado: {pnl_percent:.2f}%"
             else:
-                pnl_msg = "ℹ️ Precio de entrada desconocido, no se puede calcular el resultado."
+                pnl_msg = "ℹ️ No se pudo calcular el resultado (precio de entrada desconocido)."
 
-            send_telegram_message(f"❌ Posición cerrada en {symbol}\n{pnl_msg}")
+            # Enviar mensaje a Telegram
+            sendTelegramMessage(f"❌ Posición cerrada en {symbol}\n{pnl_msg}")
 
+            # Resetear variables globales
             current_position = None
             position_entry_price = None
 
             return order
+
         else:
-            send_telegram_message("ℹ️ No hay posición abierta para cerrar.")
+            sendTelegramMessage("ℹ️ No hay posición abierta para cerrar.")
             return None
 
     except Exception as e:
-        send_telegram_message(f"⚠️ Error al cerrar posición: {e}")
+        sendTelegramMessage(f"⚠️ Error al cerrar posición: {e}")
         return None
         
-
 # Endpoint para recibir alertas de TradingView
 @app.route("/webhook",methods=["POST"])
 def webhook():
