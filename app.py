@@ -118,7 +118,6 @@ def open_position(signal, symbol, amount):
         return None
                   
 # Función para cerrar operación
-# Función para cerrar operación
 def close_position(symbol):
     global current_position, position_entry_price
 
@@ -137,7 +136,7 @@ def close_position(symbol):
                 symbol=symbol,
                 side=side,
                 orderType="Market",
-                qty=0.1,
+                qty=0.001,
                 timeInForce="GoodTillCancel"
             )
 
@@ -163,7 +162,7 @@ def close_position(symbol):
                 pnl_msg = "ℹ️ No se pudo calcular el resultado (precio de entrada desconocido)."
 
             # Enviar mensaje a Telegram
-            sendTelegramMessage(f"❌ Posición cerrada en {symbol}\n{pnl_msg}")
+            send_telegram_message(f"❌ Posición cerrada en {symbol}\n{pnl_msg}")
 
             # Resetear variables globales
             current_position = None
@@ -172,11 +171,11 @@ def close_position(symbol):
             return order
 
         else:
-            sendTelegramMessage("ℹ️ No hay posición abierta para cerrar.")
+            send_telegram_message("ℹ️ No hay posición abierta para cerrar.")
             return None
 
     except Exception as e:
-        sendTelegramMessage(f"⚠️ Error al cerrar posición: {e}")
+        send_telegram_message(f"⚠️ Error al cerrar posición: {e}")
         return None
         
 # Endpoint para recibir alertas de TradingView
