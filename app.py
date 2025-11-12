@@ -189,54 +189,25 @@ def close_position(symbol):
 # === Endpoint para recibir alertas desde TradingView ===
 @app.route("/webhook", methods=["POST"])
 def webhook():
-    global current_position
+    data = request.get_json()
+    signal = data.get("signal")
+    symbol = data.get("symbol") or data.get("pair")
+    amount = data.get("amount", "5USDT")  # Valor por defecto 5 USDT si no viene en el mensaje
 
+    # Eliminar posibles espacios o texto ("USDT")
     try:
-        data = request.get_json()
+        amount_value = float(amount.replace("USDT", "").strip())
+    except:
+        amount_value = 5.0  # fallback
 
-        # === Validar datos recibidos ===
-        if not data or "signal" not in data or "symbol" not in data:
-            return jsonify({"status": "error", "message": "Datos incompletos"}), 400
-
-        signal = data["signal"].upper()
-        symbol = data["symbol"].upper()
-
-        send_telegram_message(f"📩 Alerta recibida: {signal} en {symbol}")
-
-        # === Lógica de ejecución según señal ===
-        if signal == "BUY":
-            if current_position == "Buy":
-                send_telegram_message("⚠️ Ya hay una posición BUY abierta, no se abre otra.")
-            elif current_position == "Sell":
-                send_telegram_message("🔄 Señal contraria detectada: cerrando posición SELL antes de abrir BUY.")
-                close_position(symbol)
-                open_position(signal, symbol)
-            else:
-                open_position(signal, symbol)
-
-        elif signal == "SELL":
-            if current_position == "Sell":
-                send_telegram_message("⚠️ Ya hay una posición SELL abierta, no se abre otra.")
-            elif current_position == "Buy":
-                send_telegram_message("🔄 Señal contraria detectada: cerrando posición BUY antes de abrir SELL.")
-                close_position(symbol)
-                open_position(signal, symbol)
-            else:
-                open_position(signal, symbol)
-
-        elif signal == "CLOSE":
-            send_telegram_message(f"🚪 Señal de cierre recibida para {symbol}")
-            close_position(symbol)
-
-        else:
-            send_telegram_message(f"⚠️ Señal desconocida: {signal}")
-
-        return jsonify({"status": "ok", "message": "Alerta procesada"}), 200
-
-    except Exception as e:
-        send_telegram_message(f"⚠️ Error en webhook: {e}")
-        return jsonify({"status": "error", "message": str(e)}), 500
-
+    if signal in ["BUY", "SELL"]:
+        send_telegram_message(f"📩 Alerta recibida: {signal} en {symbol} por {amount_value} USDT")
+        open_position(signal, symbol, amount_value)
+        return jsonify({"status": "ok"}), 200
+    else:
+        send_telegram_message(f"⚠️ Señal inválida recibida: {signal}")
+        return jsonify({"status": "error", "message": "Invalid signal"}), 400
+        
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 5000))
     app.run(host="0.0.0.0", port=port)
